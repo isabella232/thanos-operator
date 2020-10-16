@@ -7,7 +7,6 @@ import (
 	"github.com/banzaicloud/operator-tools/pkg/reconciler"
 	"github.com/banzaicloud/thanos-operator/pkg/sdk/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -39,16 +38,19 @@ type HashRingGroup struct {
 
 func (r *Receiver) generateEndpointsForGroup(group v1alpha1.ReceiverGroup) []string {
 	var endpoints []string
-	for i := 0; i < group.Replicas; i++ {
-		endpoint := fmt.Sprintf("%s-%d.%s.svc.%s", group.GroupName, i, group.Namespace, r.Thanos.GetClusterDomain())
-		endpoints = append(endpoints, endpoint)
+	for i := 0; i < int(group.Replicas); i++ {
+		name := (&receiverInstance{
+			Receiver:      r,
+			receiverGroup: &group,
+		}).getName("")
+		endpoints = append(endpoints, fmt.Sprintf("%s-%d.%s.%s.svc.%s", name, i, name, group.Namespace, r.GetClusterDomain()))
 	}
 	return endpoints
 }
 
 func (r *Receiver) GenerateHashring() (string, error) {
-	hashringConfig := make([]HashRingGroup, len(r.ReceiverObject.Spec.ReceiverGroups))
-	for i, receiverGroup := range r.ReceiverObject.Spec.ReceiverGroups {
+	hashringConfig := make([]HashRingGroup, len(r.Spec.ReceiverGroups))
+	for i, receiverGroup := range r.Spec.ReceiverGroups {
 		hashringConfig[i].HashRing = receiverGroup.GroupName
 		hashringConfig[i].Tenants = receiverGroup.Tenants
 		hashringConfig[i].Endpoints = r.generateEndpointsForGroup(receiverGroup)
@@ -66,8 +68,7 @@ func (r *Receiver) hashring() (runtime.Object, reconciler.DesiredState, error) {
 		return nil, nil, err
 	}
 	configmap := &v1.ConfigMap{
-		TypeMeta:   metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{},
+		ObjectMeta: r.GetObjectMeta("hashring-config"),
 		Data: map[string]string{
 			"hashring.json": configuration,
 		},

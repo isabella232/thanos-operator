@@ -29,6 +29,8 @@ import (
 	// +kubebuilder:scaffold:imports
 )
 
+const DefaultLeaderElectionID = "banzaicloud-thanos-operator"
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -60,7 +62,7 @@ func main() {
 	}))
 
 	if leaderElectionId == "" {
-		leaderElectionId = "thanos-operator." + thanosv1alpha1.GroupVersion.String()
+		leaderElectionId = DefaultLeaderElectionID
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -98,6 +100,14 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StoreEndpoint")
+		os.Exit(1)
+	}
+	if err = (&controllers.ReceiverReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("Receiver"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Receiver")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

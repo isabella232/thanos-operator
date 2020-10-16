@@ -28,7 +28,7 @@ import (
 )
 
 type ReceiverReconciler struct {
-	Receiver *v1alpha1.Receiver
+	*v1alpha1.Receiver
 	*reconciler.GenericResourceReconciler
 }
 
@@ -51,6 +51,13 @@ func (t *ReceiverReconciler) GetCheck(port int32, path string) *corev1.Probe {
 	}
 }
 
+func (t *ReceiverReconciler) GetClusterDomain() string {
+	if t.Spec.ClusterDomain != "" {
+		return t.Spec.ClusterDomain
+	}
+	return "cluster.local"
+}
+
 func (t *ReceiverReconciler) GetCommonLabels() Labels {
 	return Labels{
 		ManagedByLabel: t.Receiver.Name,
@@ -61,15 +68,19 @@ func (t *ReceiverReconciler) QualifiedName(name string) string {
 	return fmt.Sprintf("%s-%s", t.Receiver.Name, name)
 }
 
-func (t *ReceiverReconciler) GetNameMeta(name string) metav1.ObjectMeta {
+func (t *ReceiverReconciler) GetNameMeta(name string, namespaceOverride string) metav1.ObjectMeta {
+	namespace := t.Receiver.Namespace
+	if namespaceOverride != "" {
+		namespace = namespaceOverride
+	}
 	return metav1.ObjectMeta{
 		Name:      name,
-		Namespace: t.Receiver.Namespace,
+		Namespace: namespace,
 	}
 }
 
 func (t *ReceiverReconciler) GetObjectMeta(name string) metav1.ObjectMeta {
-	meta := t.GetNameMeta(name)
+	meta := t.GetNameMeta(name, "")
 	meta.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: t.Receiver.APIVersion,

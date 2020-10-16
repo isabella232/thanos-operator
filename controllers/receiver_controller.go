@@ -19,8 +19,7 @@ import (
 
 	"github.com/banzaicloud/operator-tools/pkg/reconciler"
 	"github.com/banzaicloud/thanos-operator/pkg/resources"
-	"github.com/banzaicloud/thanos-operator/pkg/resources/bucketweb"
-	"github.com/banzaicloud/thanos-operator/pkg/resources/compactor"
+	"github.com/banzaicloud/thanos-operator/pkg/resources/receiver"
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,30 +42,27 @@ type ReceiverReconciler struct {
 func (r *ReceiverReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	result := ctrl.Result{}
 	ctx := context.Background()
-	log := r.Log.WithValues("objectstore", req.NamespacedName)
+	log := r.Log.WithValues("receivers", req.NamespacedName)
 
-	store := &monitoringv1alpha1.ObjectStore{}
-	err := r.Client.Get(ctx, req.NamespacedName, store)
+	receivers := &monitoringv1alpha1.Receiver{}
+	err := r.Client.Get(ctx, req.NamespacedName, receivers)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return result, nil
 		}
 		return result, err
 	}
-	objectStoreReconciler := resources.NewObjectStoreReconciler(store, reconciler.NewGenericReconciler(r.Client, log, reconciler.ReconcilerOpts{}))
+	receiverReconciler := resources.NewReceiverReconciler(receivers, reconciler.NewGenericReconciler(r.Client, log, reconciler.ReconcilerOpts{}))
 
-	reconcilers := make([]resources.ComponentReconciler, 0)
-
-	// Bucket Web
-	reconcilers = append(reconcilers, bucketweb.New(objectStoreReconciler).Reconcile)
-	// Compactor
-	reconcilers = append(reconcilers, compactor.New(objectStoreReconciler).Reconcile)
+	reconcilers := []resources.ComponentReconciler{
+		receiver.New(receiverReconciler).Reconcile,
+	}
 
 	return resources.RunReconcilers(reconcilers)
 }
 
 func (r *ReceiverReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&monitoringv1alpha1.ObjectStore{}).
+		For(&monitoringv1alpha1.Receiver{}).
 		Complete(r)
 }

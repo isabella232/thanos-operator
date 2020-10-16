@@ -26,8 +26,7 @@ import (
 )
 
 type Receiver struct {
-	ReceiverObject *v1alpha1.Receiver
-	*resources.ThanosComponentReconciler
+	*resources.ReceiverReconciler
 }
 
 type receiverInstance struct {
@@ -44,13 +43,13 @@ func (r *receiverInstance) getName(suffix ...string) string {
 }
 
 func (r *receiverInstance) getVolumeMeta(name string) metav1.ObjectMeta {
-	meta := r.GetNameMeta(name, r.receiverGroup.Namespace)
+	meta := r.GetNameMeta(name, "")
 	meta.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: r.ReceiverObject.APIVersion,
-			Kind:       r.ReceiverObject.Kind,
-			Name:       r.ReceiverObject.Name,
-			UID:        r.ReceiverObject.UID,
+			APIVersion: r.APIVersion,
+			Kind:       r.Kind,
+			Name:       r.Name,
+			UID:        r.UID,
 			Controller: utils.BoolPointer(true),
 		},
 	}
@@ -66,10 +65,10 @@ func (r *receiverInstance) getMeta(suffix ...string) metav1.ObjectMeta {
 	meta := r.GetNameMeta(r.getName(nameSuffix), "")
 	meta.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: r.ReceiverObject.APIVersion,
-			Kind:       r.ReceiverObject.Kind,
-			Name:       r.ReceiverObject.Name,
-			UID:        r.ReceiverObject.UID,
+			APIVersion: r.APIVersion,
+			Kind:       r.Kind,
+			Name:       r.Name,
+			UID:        r.UID,
 			Controller: utils.BoolPointer(true),
 		},
 	}
@@ -81,25 +80,29 @@ func (r *receiverInstance) getSvc() string {
 	return fmt.Sprintf("_grpc._tcp.%s.%s.svc.cluster.local", r.getName(), r.receiverGroup.Namespace)
 }
 
-func New(reconciler *resources.ThanosComponentReconciler) *Receiver {
+func New(reconciler *resources.ReceiverReconciler) *Receiver {
 	return &Receiver{
-		ThanosComponentReconciler: reconciler,
+		reconciler,
 	}
 }
 
-func (r *Receiver) resourceFactory() []resources.Resource {
+func (r *Receiver) resourceFactory() ([]resources.Resource, error) {
 	var resourceList []resources.Resource
 
-	for _, group := range r.ReceiverObject.Spec.ReceiverGroups {
+	for _, group := range r.Spec.ReceiverGroups {
+		err := mergo.Merge(&group, v1alpha1.DefaultReceiverGroup)
+		if err != nil {
+			return nil, err
+		}
 		resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).statefulset)
 		resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).hashring)
-		//resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).service)
+		resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).service)
 		//resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).serviceMonitor)
 		//resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).ingressHTTP)
 		//resourceList = append(resourceList, (&receiverInstance{r, group.DeepCopy()}).ingressGRPC)
 	}
 
-	return resourceList
+	return resourceList, nil
 }
 
 //func (r *Receiver) GetServiceURLS() []string {
@@ -111,13 +114,11 @@ func (r *Receiver) resourceFactory() []resources.Resource {
 //}
 
 func (r *Receiver) Reconcile() (*reconcile.Result, error) {
-	if r.Thanos.Spec.Rule != nil {
-		err := mergo.Merge(r.Thanos.Spec.Rule, v1alpha1.DefaultRule)
-		if err != nil {
-			return nil, err
-		}
+	resources, err := r.resourceFactory()
+	if err != nil {
+		return nil, err
 	}
-	return r.ReconcileResources(r.resourceFactory())
+	return r.ReconcileResources(resources)
 }
 
 func (r *receiverInstance) getLabels() resources.Labels {
@@ -126,9 +127,6 @@ func (r *receiverInstance) getLabels() resources.Labels {
 	}.Merge(
 		r.GetCommonLabels(),
 	)
-	if r.Thanos.Spec.Rule != nil {
-		labels.Merge(r.Thanos.Spec.Rule.Labels)
-	}
 	return labels
 }
 

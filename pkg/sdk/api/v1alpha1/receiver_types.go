@@ -21,17 +21,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var DefaultReceiverGroup = &Compactor{
+var DefaultReceiverGroup = &ReceiverGroup{
 	Metrics: &Metrics{
 		Interval:       "15s",
 		Timeout:        "5s",
 		Path:           "/metrics",
 		ServiceMonitor: false,
 	},
+	HTTPAddress:        "0.0.0.0:10909",
+	RemoteWriteAddress: "0.0.0.0:10908",
+	GRPCAddress:        "0.0.0.0:10907",
+	TSDBPath:           "/data",
 }
 
 type ReceiverSpec struct {
 	ReceiverGroups []ReceiverGroup `json:"receiverGroups,omitempty"`
+	ClusterDomain  string          `json:"clusterDomain,omitempty"`
 }
 
 // Defines a Receiver group
@@ -41,12 +46,12 @@ type ReceiverGroup struct {
 	GroupName             string               `json:"groupName"`
 	Namespace             string               `json:"namespace"`
 	Tenants               []string             `json:"tenants,omitempty"`
-	Replicas              int                  `json:"replicas,omitempty"`
+	Config                secret.Secret        `json:"config"`
+	Replicas              int32                `json:"replicas,omitempty"`
 	MetaOverrides         *types.MetaBase      `json:"metaOverrides,omitempty"`
 	WorkloadMetaOverrides *types.MetaBase      `json:"workloadMetaOverrides,omitempty"`
 	WorkloadOverrides     *types.PodSpecBase   `json:"workloadOverrides,omitempty"`
 	ContainerOverrides    *types.ContainerBase `json:"containerOverrides,omitempty"`
-	Config                secret.Secret        `json:"config,omitempty"`
 	HTTPIngress           *Ingress             `json:"HTTPIngress,omitempty"`
 	// Secret name for HTTP Server certificate (Kubernetes TLS secret type)
 	HTTPServerCertificate string `json:"HTTPServerCertificate,omitempty"`
@@ -61,7 +66,7 @@ type ReceiverGroup struct {
 	RemoteWriteClientServerName string   `json:"remoteWriteClientServerName,omitempty" thanos:"--remote-write.client-server-name=%s"`
 	Metrics                     *Metrics `json:"metrics,omitempty"`
 	// Listen host:port for HTTP endpoints.
-	HTTPAddress string `json:"httpAddress,omitempty"`
+	HTTPAddress string `json:"httpAddress,omitempty" thanos:"--http-address=%s"`
 	// Time to wait after an interrupt received for HTTP Server.
 	HTTPGracePeriod metav1.Duration `json:"httpGracePeriod,omitempty"`
 	// Listen ip:port address for gRPC endpoints
@@ -74,6 +79,7 @@ type ReceiverGroup struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// Kubernetes volume abstraction refers to different types of volumes to be mounted to pods: emptyDir, hostPath, pvc.
 	DataVolume *volume.KubernetesVolume `json:"dataVolume,omitempty"`
+	TSDBPath   string                   `json:"tsdbPath,omitempty" thanos:"--tsdb.path=%s"`
 	// How long to retain raw samples on local storage. 0d - disables this retention.
 	TSDBRetention string `json:"tsdbRetention,omitempty" thanos:"--tsdb.retention=%s"`
 	// Refresh interval to re-read the hashring configuration file. (used as a fallback)

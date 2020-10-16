@@ -438,6 +438,7 @@ func (in *ReceiverGroup) DeepCopyInto(out *ReceiverGroup) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	in.Config.DeepCopyInto(&out.Config)
 	if in.MetaOverrides != nil {
 		in, out := &in.MetaOverrides, &out.MetaOverrides
 		*out = new(types.MetaBase)
@@ -458,7 +459,6 @@ func (in *ReceiverGroup) DeepCopyInto(out *ReceiverGroup) {
 		*out = new(types.ContainerBase)
 		(*in).DeepCopyInto(*out)
 	}
-	in.Config.DeepCopyInto(&out.Config)
 	if in.HTTPIngress != nil {
 		in, out := &in.HTTPIngress, &out.HTTPIngress
 		*out = new(Ingress)

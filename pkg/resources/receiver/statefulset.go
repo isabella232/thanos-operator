@@ -1,3 +1,4 @@
+// Copyright 2020 Banzai Cloud
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,39 +28,39 @@ import (
 )
 
 func (r *receiverInstance) statefulset() (runtime.Object, reconciler.DesiredState, error) {
-	if r.Thanos.Spec.Rule != nil {
-		rule := r.Thanos.Spec.Rule.DeepCopy()
+	if r.receiverGroup != nil {
+		receiveGroup := r.receiverGroup.DeepCopy()
 
 		statefulset := &appsv1.StatefulSet{
-			ObjectMeta: rule.MetaOverrides.Merge(r.getMeta()),
+			ObjectMeta: receiveGroup.MetaOverrides.Merge(r.getMeta()),
 		}
 
 		statefulset.Spec = appsv1.StatefulSetSpec{
-			Replicas: utils.IntPointer(1),
+			Replicas: utils.IntPointer(r.receiverGroup.Replicas),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: r.getLabels(),
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: rule.WorkloadMetaOverrides.Merge(r.getMeta()),
-				Spec: rule.WorkloadOverrides.Override(corev1.PodSpec{
+				ObjectMeta: receiveGroup.WorkloadMetaOverrides.Merge(r.getMeta()),
+				Spec: receiveGroup.WorkloadOverrides.Override(corev1.PodSpec{
 					Containers: []corev1.Container{
-						rule.ContainerOverrides.Override(corev1.Container{
+						receiveGroup.ContainerOverrides.Override(corev1.Container{
 							Name:  "receive",
 							Image: fmt.Sprintf("%s:%s", v1alpha1.ThanosImageRepository, v1alpha1.ThanosImageTag),
 							Args: []string{
-								"rule",
-								fmt.Sprintf("--objstore.config-file=/etc/config/%s", r.StoreEndpoint.Spec.Config.MountFrom.SecretKeyRef.Key),
+								"receive",
+								fmt.Sprintf("--objstore.config-file=/etc/config/%s", r.receiverGroup.Config.MountFrom.SecretKeyRef.Key),
 							},
 							WorkingDir: "",
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "http",
-									ContainerPort: resources.GetPort(rule.HttpAddress),
+									ContainerPort: resources.GetPort(receiveGroup.HTTPAddress),
 									Protocol:      corev1.ProtocolTCP,
 								},
 								{
 									Name:          "grpc",
-									ContainerPort: resources.GetPort(rule.GRPCAddress),
+									ContainerPort: resources.GetPort(receiveGroup.GRPCAddress),
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
@@ -70,8 +71,8 @@ func (r *receiverInstance) statefulset() (runtime.Object, reconciler.DesiredStat
 									MountPath: "/etc/config/",
 								},
 							},
-							LivenessProbe:   r.GetCheck(resources.GetPort(rule.HttpAddress), resources.HealthCheckPath),
-							ReadinessProbe:  r.GetCheck(resources.GetPort(rule.HttpAddress), resources.ReadyCheckPath),
+							LivenessProbe:   r.GetCheck(resources.GetPort(receiveGroup.HTTPAddress), resources.HealthCheckPath),
+							ReadinessProbe:  r.GetCheck(resources.GetPort(receiveGroup.HTTPAddress), resources.ReadyCheckPath),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 						}),
 					},
@@ -80,7 +81,7 @@ func (r *receiverInstance) statefulset() (runtime.Object, reconciler.DesiredStat
 							Name: "objectstore-secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: r.StoreEndpoint.Spec.Config.MountFrom.SecretKeyRef.Name,
+									SecretName: r.receiverGroup.Config.MountFrom.SecretKeyRef.Name,
 								},
 							},
 						},
@@ -91,16 +92,16 @@ func (r *receiverInstance) statefulset() (runtime.Object, reconciler.DesiredStat
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = r.setArgs(statefulset.Spec.Template.Spec.Containers[0].Args)
 
-		if r.Thanos.Spec.Rule.DataVolume != nil {
-			if r.Thanos.Spec.Rule.DataVolume.PersistentVolumeClaim != nil {
+		if receiveGroup.DataVolume != nil {
+			if receiveGroup.DataVolume.PersistentVolumeClaim != nil {
 				statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 					Name:      "data-volume",
-					MountPath: r.Thanos.Spec.Rule.DataDir,
+					MountPath: receiveGroup.TSDBPath,
 				})
 				statefulset.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
 					{
 						ObjectMeta: r.getVolumeMeta("data-volume"),
-						Spec:       r.Thanos.Spec.Rule.DataVolume.PersistentVolumeClaim.PersistentVolumeClaimSpec,
+						Spec:       receiveGroup.DataVolume.PersistentVolumeClaim.PersistentVolumeClaimSpec,
 						Status: corev1.PersistentVolumeClaimStatus{
 							Phase: corev1.ClaimPending,
 						},
@@ -109,10 +110,10 @@ func (r *receiverInstance) statefulset() (runtime.Object, reconciler.DesiredStat
 			} else {
 				statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 					Name:      "data-volume",
-					MountPath: r.Thanos.Spec.Rule.DataDir,
+					MountPath: receiveGroup.TSDBPath,
 				})
 
-				volume, err := r.Thanos.Spec.Rule.DataVolume.GetVolume("data-volume")
+				volume, err := receiveGroup.DataVolume.GetVolume("data-volume")
 				if err != nil {
 					return statefulset, reconciler.StateAbsent, err
 				}
